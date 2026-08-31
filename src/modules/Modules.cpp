@@ -72,6 +72,9 @@
 #include "modules/Telemetry/EnvironmentTelemetry.h"
 #include "modules/Telemetry/HealthTelemetry.h"
 #include "modules/Telemetry/Sensor/TelemetrySensor.h"
+#ifdef STATION_METEO
+#include "modules/Telemetry/StationMeteoModule.h"
+#endif
 #endif
 #if HAS_SENSOR && !MESHTASTIC_EXCLUDE_AIR_QUALITY_SENSOR
 #include "main.h"
@@ -228,6 +231,9 @@ void setupModules()
         (moduleConfig.telemetry.environment_measurement_enabled || moduleConfig.telemetry.environment_screen_enabled)) {
         environmentTelemetryModule = new EnvironmentTelemetryModule();
     }
+#ifdef STATION_METEO
+    new StationMeteoModule();
+#endif
 #if HAS_TELEMETRY && HAS_SENSOR && !MESHTASTIC_EXCLUDE_AIR_QUALITY_SENSOR
     if (moduleConfig.has_telemetry &&
         (moduleConfig.telemetry.air_quality_enabled || moduleConfig.telemetry.air_quality_screen_enabled)) {

@@ -1544,6 +1544,13 @@ int32_t GPS::runOnce()
 
         // 2. Got a lock for the first time, or 3. Got a lock after turning back on
         bool gotLoc = lookForLocation();
+#ifdef STATION_METEO
+        // Position lock without a prior NMEA time: still try to set the RTC
+        // (slots 06/12/18 need a valid clock).
+        if (gotLoc && !gotTime && lookForTime()) {
+            gotTime = true;
+        }
+#endif
         if (gotLoc) {
 #if GPS_DEBUG
             if (!hasValidLocation) { // declare that we have location ASAP

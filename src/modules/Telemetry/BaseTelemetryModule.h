@@ -19,7 +19,16 @@ class BaseTelemetryModule
     /// sleeps between telemetry broadcasts
     bool isPowerSavingSensor() const
     {
+#ifdef STATION_METEO_DEV_NO_SLEEP
+        return false;
+#else
+#ifdef STATION_METEO
+        // USB-CDC host (DTR) : rester éveillé pendant une session client.
+        if (Serial)
+            return false;
+#endif
         return config.device.role == meshtastic_Config_DeviceConfig_Role_SENSOR && config.power.is_power_saving;
+#endif
     }
 
     /**

@@ -33,7 +33,7 @@ bool BME680Sensor::initDevice(TwoWire *bus, ScanI2C::FoundDevice *dev)
     bme680->setHumidityOversampling(BME680_OS_2X);
     bme680->setPressureOversampling(BME680_OS_4X);
     bme680->setIIRFilterSize(BME680_FILTER_SIZE_3);
-    bme680->setGasHeater(320, 150); // 320 degC for 150 ms
+    bme680->setGasHeater(320, 200); // 320 degC for 200 ms (BME688 HEAT_STAB)
 
     status = 1;
     loadState();
@@ -85,14 +85,32 @@ void BME680Sensor::captureSample()
     lastHumidity = bme680->humidity;
     lastPressureHPa = bme680->pressure / 100.0F;
     lastGasOhms = (float)bme680->gas_resistance;
+    // First cycles often report gas=0 (heater not stable). One extra forced
+    // conversion usually gets a usable resistance; without it the estimator
+    // never leaves warm-up and IAQ stays off the wire forever.
+    if (!(isfinite(lastGasOhms) && lastGasOhms > 0.0f)) {
+        delay(80);
+        if (bme680->performReading() && bme680->gas_resistance > 0) {
+            lastTemperature = bme680->temperature;
+            lastHumidity = bme680->humidity;
+            lastPressureHPa = bme680->pressure / 100.0F;
+            lastGasOhms = (float)bme680->gas_resistance;
+        } else {
+            lastGasOhms = 0.0f;
+            LOG_WARN("%s gas resistance 0 (heater unstable)", sensorName);
+        }
+    }
     haveSample = true;
     lastSampleMs = Time::getMillis();
 
+    const bool iaqWasValid = lastIaqValid;
     uint16_t iaq;
     if (iaqEstimator.update(lastGasOhms, lastHumidity, &iaq)) {
         lastIaq = iaq;
         lastIaqValid = true;
         lastIaqMs = lastSampleMs;
+        if (!iaqWasValid)
+            LOG_INFO("%s IAQ %u (gas %.0f Ohm)", sensorName, lastIaq, lastGasOhms);
     } else if (isfinite(lastGasOhms) && lastGasOhms > 0.0f) {
         // Valid gas sample but the estimator has no output yet (warm-up/burn-in)
         lastIaqValid = false;

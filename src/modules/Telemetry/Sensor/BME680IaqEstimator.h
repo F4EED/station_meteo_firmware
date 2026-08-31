@@ -66,13 +66,13 @@ class BME680IaqEstimator
     static constexpr float RH_COMFORT_MAX = 60.0f;
     static constexpr float RH_DEV_NORM = 40.0f;
     static constexpr uint32_t WARMUP_DISCARD = 3;                    // first-ever samples, while the heater element settles
-    static constexpr uint32_t BURN_IN_SAMPLES = 30;                  // no output until the baseline has this much history
+    static constexpr uint32_t BURN_IN_SAMPLES = 30;                  // ready(): baseline mature enough for slower flash saves
     static constexpr uint32_t STATE_MAX_AGE_SECS = 7 * 24 * 60 * 60; // a week-old baseline says nothing about today's air
 
     /**
-     * Feed one sample. Returns true and writes *iaqOut (0-500) once the
-     * estimator has enough history; returns false during warm-up/burn-in or
-     * for invalid readings.
+     * Feed one sample. Returns true and writes *iaqOut (0-500) after warm-up
+     * (first valid post-heater sample); returns false during warm-up or for
+     * invalid readings. ready() is still delayed until BURN_IN_SAMPLES.
      */
     bool update(float gasOhms, float relativeHumidity, uint16_t *iaqOut);
 

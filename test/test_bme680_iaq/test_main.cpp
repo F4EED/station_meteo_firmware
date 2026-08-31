@@ -15,18 +15,20 @@ namespace
 constexpr float CLEAN_GAS = 400000.0f; // ~clean-air gas resistance in Ohms
 constexpr float REF_RH = 40.0f;
 
-// Total update() calls before the first IAQ value can appear: the warm-up
-// discards plus the burn-in history requirement
+// First IAQ after warm-up discards; ready() still waits for a mature baseline
+constexpr uint32_t CALLS_TO_FIRST_IAQ = BME680IaqEstimator::WARMUP_DISCARD + 1;
 constexpr uint32_t CALLS_TO_READY = BME680IaqEstimator::WARMUP_DISCARD + BME680IaqEstimator::BURN_IN_SAMPLES;
 
-/// Feed constant clean air until the estimator reports; returns the first IAQ
+/// Feed constant clean air until the baseline is mature; returns the last IAQ
 uint16_t makeReady(BME680IaqEstimator &est, float gasOhms = CLEAN_GAS, float rh = REF_RH)
 {
     uint16_t iaq = 0xFFFF;
     for (uint32_t i = 0; i < CALLS_TO_READY; i++) {
         bool got = est.update(gasOhms, rh, &iaq);
-        TEST_ASSERT_EQUAL_MESSAGE(i == CALLS_TO_READY - 1, got, "IAQ must appear exactly when burn-in completes");
+        TEST_ASSERT_EQUAL_MESSAGE(i >= BME680IaqEstimator::WARMUP_DISCARD, got,
+                                  "IAQ must appear on every sample after warm-up");
     }
+    TEST_ASSERT_TRUE(est.ready());
     return iaq;
 }
 
@@ -73,16 +75,19 @@ void test_invalid_humidity_is_neutral()
 
 // --- Warm-up / burn-in gating ---
 
-void test_no_output_until_burn_in()
+void test_no_output_until_warmup()
 {
     BME680IaqEstimator est;
     uint16_t iaq = 0xFFFF;
-    for (uint32_t i = 0; i < CALLS_TO_READY - 1; i++)
+    for (uint32_t i = 0; i < BME680IaqEstimator::WARMUP_DISCARD; i++)
         TEST_ASSERT_FALSE(est.update(CLEAN_GAS, REF_RH, &iaq));
     TEST_ASSERT_FALSE(est.ready());
     TEST_ASSERT_TRUE(est.update(CLEAN_GAS, REF_RH, &iaq));
-    TEST_ASSERT_TRUE(est.ready());
+    TEST_ASSERT_FALSE(est.ready());
     TEST_ASSERT_EQUAL_UINT16(0, iaq);
+    for (uint32_t i = 1; i < BME680IaqEstimator::BURN_IN_SAMPLES; i++)
+        TEST_ASSERT_TRUE(est.update(CLEAN_GAS, REF_RH, &iaq));
+    TEST_ASSERT_TRUE(est.ready());
 }
 
 // --- Scoring ---
@@ -242,15 +247,15 @@ void test_restore_mid_burn_in_continues_progress()
             break;
         }
     }
-    // 5 of 30 burn-in samples were banked before the "reboot"
-    TEST_ASSERT_EQUAL_INT(BME680IaqEstimator::BURN_IN_SAMPLES - 5, producedAt);
+    // Warm-up + 5 samples were banked: the next sample must produce IAQ
+    TEST_ASSERT_EQUAL_INT(1, producedAt);
 }
 
 void test_deep_sleep_node_converges_across_reboots()
 {
     // Simulate a power-saving SENSOR role: one sample per wake, RAM wiped
     // between wakes, state restored+persisted each cycle. Must produce IAQ
-    // after exactly warm-up + burn-in wakes, not never.
+    // after warm-up + 1, not wait for the full burn-in.
     BME680IaqState state;
     bool haveState = false;
     uint16_t iaq = 0xFFFF;
@@ -266,7 +271,7 @@ void test_deep_sleep_node_converges_across_reboots()
         est.serialize(&state, 0);
         haveState = true;
     }
-    TEST_ASSERT_EQUAL_INT((int)CALLS_TO_READY, producedAt);
+    TEST_ASSERT_EQUAL_INT((int)CALLS_TO_FIRST_IAQ, producedAt);
     TEST_ASSERT_EQUAL_UINT16(0, iaq);
 }
 
@@ -332,7 +337,7 @@ void setup()
     printf("\n=== BME680 IAQ estimator ===\n");
     RUN_TEST(test_rejects_invalid_gas);
     RUN_TEST(test_invalid_humidity_is_neutral);
-    RUN_TEST(test_no_output_until_burn_in);
+    RUN_TEST(test_no_output_until_warmup);
     RUN_TEST(test_clean_air_scores_zero);
     RUN_TEST(test_band_mapping_from_baseline_ratio);
     RUN_TEST(test_band_mapping_holds_for_high_resistance_sensors);

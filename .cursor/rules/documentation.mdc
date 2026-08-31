@@ -1,0 +1,10 @@
+---
+description: Doc Station-météo — hors de ce tree firmware
+alwaysApply: true
+---
+
+# Documentation du projet
+
+La doc **projet global** est `../README.md` (seul fichier à la racine `Station-météo/`).
+
+Ce checkout = firmware seulement. Ne pas y ajouter README / Meshtastic.md / CHANGELOG station. Si un défaut LoRa, seuil ou env change, mettre à jour `../README.md` dans le **même** changement.

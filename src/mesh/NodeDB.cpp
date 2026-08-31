@@ -470,6 +470,11 @@ NodeDB::NodeDB()
 {
     LOG_INFO("Init NodeDB");
     loadFromDisk();
+#ifdef STATION_METEO_DEV_NO_SLEEP
+    // Runtime only (before CRC) : flash inchangé. Retirer le flag compile pour rétablir le sommeil.
+    config.power.is_power_saving = false;
+    LOG_INFO("STATION_METEO_DEV_NO_SLEEP: is_power_saving forced off");
+#endif
     cleanupMeshDB();
 
     uint32_t devicestateCRC = crc32Buffer(&devicestate, sizeof(devicestate));
@@ -1260,7 +1265,7 @@ void NodeDB::initConfigIntervals()
 
     config.display.screen_on_secs = default_screen_on_secs;
 
-#if defined(USE_POWERSAVE)
+#if defined(USE_POWERSAVE) && !defined(STATION_METEO_DEV_NO_SLEEP)
     config.power.is_power_saving = true;
     config.display.screen_on_secs = 30;
     config.power.wait_bluetooth_secs = 30;
@@ -1608,10 +1613,18 @@ void NodeDB::installRoleDefaults(meshtastic_Config_DeviceConfig_Role role)
         owner.is_unmessagable = true;
     } else if (role == meshtastic_Config_DeviceConfig_Role_SENSOR) {
         owner.has_is_unmessagable = true;
+#ifdef STATION_METEO
+        owner.is_unmessagable = false;
+#else
         owner.is_unmessagable = true;
+#endif
         moduleConfig.telemetry.device_update_interval = default_telemetry_broadcast_interval_secs;
         moduleConfig.telemetry.environment_measurement_enabled = true;
         moduleConfig.telemetry.environment_update_interval = 300;
+#ifdef STATION_METEO
+        moduleConfig.telemetry.power_measurement_enabled = true;
+        moduleConfig.telemetry.environment_screen_enabled = false;
+#endif
     } else if (role == meshtastic_Config_DeviceConfig_Role_LOST_AND_FOUND) {
         config.position.position_broadcast_smart_enabled = false;
         config.position.position_broadcast_secs = 300; // Every 5 minutes

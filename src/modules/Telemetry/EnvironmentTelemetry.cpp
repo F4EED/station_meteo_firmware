@@ -21,6 +21,9 @@
 #include "sleep.h"
 #include "target_specific.h"
 #include <OLEDDisplay.h>
+#ifdef STATION_METEO
+#include "WeatherAlertPolicy.h"
+#endif
 
 #if !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL
 
@@ -440,6 +443,14 @@ int32_t EnvironmentTelemetryModule::runOnce()
                 result = delay;
             }
         }
+#ifdef STATION_METEO
+        {
+            meshtastic_Telemetry sample = meshtastic_Telemetry_init_zero;
+            if (getEnvironmentTelemetry(&sample)) {
+                WeatherAlertPolicy::apply(sample.variant.environment_metrics);
+            }
+        }
+#endif
         refreshDisplayedMeasurement();
 
         // Give up on a stale immediate-send request rather than fire an arbitrarily late broadcast.

@@ -34,9 +34,9 @@ bool BME680IaqEstimator::update(float gasOhms, float relativeHumidity, uint16_t 
 
     if (sampleCount < UINT32_MAX)
         sampleCount++;
-    if (sampleCount < BURN_IN_SAMPLES)
-        return false;
 
+    // Score immediately once the ceiling is seeded (first post-warmup sample).
+    // BURN_IN_SAMPLES only gates ready() / flash-save cadence, not the wire field.
     float below = lnCeiling - x;
     if (below < 0.0f)
         below = 0.0f;

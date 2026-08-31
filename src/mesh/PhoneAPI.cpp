@@ -316,9 +316,10 @@ void PhoneAPI::handleStartConfig()
     // companion apps for those flows.
     releaseFilesManifest(filesManifest);
 #else
-    // Manifest is never read on the node-info-only path (STATE_SEND_FILEMANIFEST
-    // short-circuits to sendConfigComplete), so skip the SPI lock + FS walk.
-    if (config_nonce != SPECIAL_NONCE_ONLY_NODES) {
+    // Manifest is unused on node-info-only and config-only handshakes
+    // (FILEMANIFEST short-circuits to sendConfigComplete), so skip the
+    // SPI lock + LittleFS walk — that walk is what made USB config feel stuck.
+    if (config_nonce != SPECIAL_NONCE_ONLY_NODES && config_nonce != SPECIAL_NONCE_ONLY_CONFIG) {
         bool filesManifestLimited = false;
         {
             concurrency::LockGuard guard(spiLock);
@@ -599,7 +600,12 @@ size_t PhoneAPI::getFromRadio(uint8_t *buf)
             fromRadioScratch.my_info.min_app_version = 0;
         }
 #endif
+#ifdef STATION_METEO
+        // Headless: no Device-UI payload. Own NodeInfo is enough for the client.
+        state = STATE_SEND_OWN_NODEINFO;
+#else
         state = STATE_SEND_UIDATA;
+#endif
 
         service->refreshLocalMeshNode(); // Update my NodeInfo because the client will be asking for it soon.
         break;
@@ -944,10 +950,10 @@ size_t PhoneAPI::getFromRadio(uint8_t *buf)
             } else
 #endif
                 // Handle special nonce behaviors:
-                // - SPECIAL_NONCE_ONLY_CONFIG: Skip node info, go directly to file manifest
+                // - SPECIAL_NONCE_ONLY_CONFIG: Skip node info and file manifest
                 // - SPECIAL_NONCE_ONLY_NODES: After sending nodes, skip to complete
                 if (config_nonce == SPECIAL_NONCE_ONLY_CONFIG) {
-                    state = STATE_SEND_FILEMANIFEST;
+                    state = STATE_SEND_COMPLETE_ID;
                 } else {
                     state = STATE_SEND_OTHER_NODEINFOS;
                     onNowHasData(0);
