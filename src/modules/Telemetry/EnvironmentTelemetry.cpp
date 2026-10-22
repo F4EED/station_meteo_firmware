@@ -23,9 +23,12 @@
 #include <OLEDDisplay.h>
 #ifdef STATION_METEO
 #include "WeatherAlertPolicy.h"
+#if __has_include(<bsec2.h>) || __has_include(<Adafruit_BME680.h>)
+#include "Sensor/BME680Sensor.h"
+#endif
 #endif
 
-#if !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL
+#if !defined(STATION_METEO) && !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL
 
 // Sensors
 #include "Sensor/CGRadSensSensor.h"
@@ -293,7 +296,11 @@ void EnvironmentTelemetryModule::i2cScanFinished(ScanI2C *i2cScanner)
 #endif
 #endif
 
-#if !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR && !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL
+#if defined(STATION_METEO)
+#if __has_include(<bsec2.h>) || __has_include(<Adafruit_BME680.h>)
+    addSensor<BME680Sensor>(i2cScanner, ScanI2C::DeviceType::BME_680);
+#endif
+#elif !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR && !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL
     addSensor<RCWL9620Sensor>(i2cScanner, ScanI2C::DeviceType::RCWL9620);
     addSensor<CGRadSensSensor>(i2cScanner, ScanI2C::DeviceType::CGRADSENS);
 #if __has_include(<DFRobot_LarkWeatherStation.h>)
@@ -410,7 +417,7 @@ int32_t EnvironmentTelemetryModule::runOnce()
             }
 
 #ifdef T1000X_SENSOR_EN
-#elif !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL
+#elif !defined(STATION_METEO) && !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL
             if (ina219Sensor.hasSensor())
                 result = ina219Sensor.runOnce();
             if (ina260Sensor.hasSensor())

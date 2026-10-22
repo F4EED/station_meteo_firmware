@@ -102,13 +102,11 @@ void initVariant()
     digitalWrite(PIN_LED1, LOW);
     pinMode(PIN_LED2, OUTPUT);
     digitalWrite(PIN_LED2, LOW);
-
-    // Idle the buzzer; left floating it can whine until the first tone() call.
-    pinMode(PIN_BUZZER, OUTPUT);
-    digitalWrite(PIN_BUZZER, LOW);
 }
 
 void variant_shutdown()
 {
+    pinMode(PIN_GPS_STANDBY, OUTPUT);
+    digitalWrite(PIN_GPS_STANDBY, LOW);
     configureWakeOnPress(CANCEL_BUTTON_PIN);
 }

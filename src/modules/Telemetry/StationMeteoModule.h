@@ -4,20 +4,22 @@
 
 #include "SinglePortModule.h"
 #include "StationMeteoPrefs.h"
+#include "concurrency/OSThread.h"
 
-// Port officiel PRIVATE_APP : GET/SET du blob /prefs/station_meteo.dat (pas de proto).
-class StationMeteoModule : public SinglePortModule
+class StationMeteoModule : public SinglePortModule, private concurrency::OSThread
 {
   public:
     StationMeteoModule();
 
   protected:
     virtual ProcessMessage handleReceived(const meshtastic_MeshPacket &mp) override;
-    virtual meshtastic_MeshPacket *allocReply() override;
+    virtual int32_t runOnce() override;
 
   private:
-    void replyPrefs(uint8_t cmd);
-    bool handlePayload(const uint8_t *bytes, size_t size);
+    void pinGpsAndSleep();
+
+    bool hunting = false;
+    uint32_t huntStartMs = 0;
 };
 
 #endif

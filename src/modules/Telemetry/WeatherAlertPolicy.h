@@ -2,7 +2,7 @@
 
 #ifdef STATION_METEO
 
-#include "../mesh/generated/meshtastic/telemetry.pb.h"
+#include "mesh/generated/meshtastic/telemetry.pb.h"
 #include "NodeDB.h"
 #include "StationMeteoPrefs.h"
 #include "gps/RTC.h"
@@ -10,24 +10,13 @@
 #include <stdint.h>
 #include <time.h>
 
-// Seuils 0.1.0 : constantes de repli si /prefs/station_meteo.dat absent.
-// Priorité choc > alerte > normal.
+// Seuils 0.1.0 : priorité choc > alerte > normal.
 // gas_resistance sur le fil = kOhm (BME680Sensor) ; prefs gaz en Ω.
 struct WeatherAlertPolicy {
-    static constexpr float TEMP_MIN = -10.f;
-    static constexpr float TEMP_MAX = 40.f;
     static constexpr float TEMP_SHOCK = 3.f;
-    static constexpr float HUM_MIN = 20.f;
-    static constexpr float HUM_MAX = 90.f;
     static constexpr float HUM_SHOCK = 15.f;
-    static constexpr float PRES_MIN = 980.f;
-    static constexpr float PRES_MAX = 1040.f;
     static constexpr float PRES_SHOCK = 5.f;
-    static constexpr float GAS_KOHM_MIN = 5.f;     // 5 000 Ω
-    static constexpr float GAS_KOHM_MAX = 10000.f; // 1,0×10⁷ Ω
     static constexpr float GAS_SHOCK_REL = 0.30f;
-    static constexpr uint16_t IAQ_MIN = 0;
-    static constexpr uint16_t IAQ_MAX = 150;
     static constexpr uint16_t IAQ_SHOCK = 50;
     static constexpr float CO2_SHOCK = 200.f;
 
@@ -37,13 +26,6 @@ struct WeatherAlertPolicy {
     static constexpr int SLOT_HOURS[3] = {6, 12, 18};
 
     enum class Mode : uint8_t { Normal = 0, Alert = 1, Shock = 2 };
-
-    static const StationMeteoPrefs &prefs()
-    {
-        auto &store = StationMeteoPrefsStore::instance();
-        store.load();
-        return store.get();
-    }
 
     static uint32_t secondsUntilNextSlot(int hour, int minute, int second)
     {
@@ -71,46 +53,36 @@ struct WeatherAlertPolicy {
         static bool havePrev = false;
         static meshtastic_EnvironmentMetrics prev = meshtastic_EnvironmentMetrics_init_zero;
 
-        const StationMeteoPrefs &p = prefs();
-        const float tempMin = p.temp.low;
-        const float tempMax = p.temp.high;
-        const float humMin = p.humidity.low;
-        const float humMax = p.humidity.high;
-        const float presMin = p.pressure.low;
-        const float presMax = p.pressure.high;
-        const float gasKohmMin = p.gasOhm.low / 1000.f;
-        const float gasKohmMax = p.gasOhm.high / 1000.f;
-        const float iaqMin = p.iaq.low;
-        const float iaqMax = p.iaq.high;
-        const float co2Min = p.co2.low;
-        const float co2Max = p.co2.high;
+        StationMeteoPrefsStore::instance().load();
+        const StationMeteoPrefs &p = StationMeteoPrefsStore::instance().get();
 
         Mode mode = Mode::Normal;
 
-        const bool shockTemp = shocked(havePrev && prev.has_temperature, m.has_temperature, prev.temperature, m.temperature,
-                                       TEMP_SHOCK);
+        const bool shockTemp =
+            shocked(havePrev && prev.has_temperature, m.has_temperature, prev.temperature, m.temperature, TEMP_SHOCK);
         const bool shockHum = shocked(havePrev && prev.has_relative_humidity, m.has_relative_humidity, prev.relative_humidity,
                                       m.relative_humidity, HUM_SHOCK);
-        const bool shockPres =
-            shocked(havePrev && prev.has_barometric_pressure, m.has_barometric_pressure, prev.barometric_pressure,
-                    m.barometric_pressure, PRES_SHOCK);
-        const bool shockGas = havePrev && prev.has_gas_resistance && m.has_gas_resistance && prev.gas_resistance > 0.f &&
-                              fabsf(m.gas_resistance - prev.gas_resistance) / prev.gas_resistance >= GAS_SHOCK_REL;
-        const bool shockIaq = havePrev && prev.has_iaq && m.has_iaq &&
-                              ((m.iaq > prev.iaq ? m.iaq - prev.iaq : prev.iaq - m.iaq) >= IAQ_SHOCK);
-        const bool shockCo2 = havePrev && prev.has_iaq && m.has_iaq &&
-                              fabsf(StationMeteoPrefsStore::estimatedCo2Ppm(m.iaq) -
-                                    StationMeteoPrefsStore::estimatedCo2Ppm(prev.iaq)) >= CO2_SHOCK;
+        const bool shockPres = shocked(havePrev && prev.has_barometric_pressure, m.has_barometric_pressure,
+                                       prev.barometric_pressure, m.barometric_pressure, PRES_SHOCK);
+        const float gasNowOhm = m.has_gas_resistance ? m.gas_resistance * 1000.f : 0.f;
+        const float gasPrevOhm = havePrev && prev.has_gas_resistance ? prev.gas_resistance * 1000.f : 0.f;
+        const bool shockGas = havePrev && prev.has_gas_resistance && m.has_gas_resistance && gasPrevOhm > 0.f &&
+                              fabsf(gasNowOhm - gasPrevOhm) / gasPrevOhm >= GAS_SHOCK_REL;
+        const bool shockIaq =
+            havePrev && prev.has_iaq && m.has_iaq && ((m.iaq > prev.iaq ? m.iaq - prev.iaq : prev.iaq - m.iaq) >= IAQ_SHOCK);
+
+        const float co2Now = m.has_iaq ? StationMeteoPrefsStore::estimatedCo2Ppm(m.iaq) : 0.f;
+        const float co2Prev = havePrev && prev.has_iaq ? StationMeteoPrefsStore::estimatedCo2Ppm(prev.iaq) : 0.f;
+        const bool shockCo2 = havePrev && prev.has_iaq && m.has_iaq && fabsf(co2Now - co2Prev) >= CO2_SHOCK;
 
         if (shockTemp || shockHum || shockPres || shockGas || shockIaq || shockCo2)
             mode = Mode::Shock;
-        else if (outOfRange(m.has_temperature, m.temperature, tempMin, tempMax) ||
-                 outOfRange(m.has_relative_humidity, m.relative_humidity, humMin, humMax) ||
-                 outOfRange(m.has_barometric_pressure, m.barometric_pressure, presMin, presMax) ||
-                 outOfRange(m.has_gas_resistance, m.gas_resistance, gasKohmMin, gasKohmMax) ||
-                 (m.has_iaq && (float(m.iaq) < iaqMin || float(m.iaq) > iaqMax)) ||
-                 (m.has_iaq &&
-                  outOfRange(true, StationMeteoPrefsStore::estimatedCo2Ppm(m.iaq), co2Min, co2Max)))
+        else if (outOfRange(m.has_temperature, m.temperature, p.temp.low, p.temp.high) ||
+                 outOfRange(m.has_relative_humidity, m.relative_humidity, p.humidity.low, p.humidity.high) ||
+                 outOfRange(m.has_barometric_pressure, m.barometric_pressure, p.pressure.low, p.pressure.high) ||
+                 outOfRange(m.has_gas_resistance, gasNowOhm, p.gasOhm.low, p.gasOhm.high) ||
+                 outOfRange(m.has_iaq, (float)m.iaq, p.iaq.low, p.iaq.high) ||
+                 outOfRange(m.has_iaq, co2Now, p.co2.low, p.co2.high))
             mode = Mode::Alert;
 
         uint32_t interval = INTERVAL_ALERT_S;

@@ -940,6 +940,9 @@ void NodeDB::installDefaultConfig(bool preserveKey = false)
         true; // FIXME: maybe false in the future, and setting region to enable it. (unset region forces it off)
     config.lora.override_duty_cycle = false;
     config.lora.config_ok_to_mqtt = false;
+#ifdef STATION_METEO
+    config.lora.config_ok_to_mqtt = true;
+#endif
 #if HAS_LORA_FEM
     config.lora.fem_lna_mode = meshtastic_Config_LoRaConfig_FEM_LNA_Mode_ENABLED;
 #else
@@ -1596,6 +1599,11 @@ void NodeDB::installDefaultModuleConfig()
 #endif // !MESHTASTIC_EXCLUDE_BEACON
 
     initModuleConfigIntervals();
+#ifdef STATION_METEO
+    moduleConfig.telemetry.environment_measurement_enabled = true;
+    moduleConfig.telemetry.power_measurement_enabled = true;
+    moduleConfig.telemetry.environment_screen_enabled = false;
+#endif
 }
 
 void NodeDB::installRoleDefaults(meshtastic_Config_DeviceConfig_Role role)
@@ -2864,9 +2872,33 @@ void NodeDB::loadFromDisk()
     if (moduleConfig.version < POSITION_TELEMETRY_OPTIN_VER) {
         LOG_INFO("Opt-in migration: forcing device telemetry broadcast to opt-in");
         optInDisableTelemetryBroadcast(moduleConfig);
+#ifdef STATION_METEO
+        // La migration 2.8 éteint la télémétrie (watermark 26 > DEVICESTATE 25).
+        // Une station météo SENSOR doit rester en mesure environnement + batterie.
+        moduleConfig.telemetry.environment_measurement_enabled = true;
+        moduleConfig.telemetry.power_measurement_enabled = true;
+        moduleConfig.telemetry.environment_screen_enabled = false;
+#endif
         moduleConfig.version = POSITION_TELEMETRY_OPTIN_VER;
         saveToDisk(SEGMENT_MODULECONFIG);
     }
+
+#ifdef STATION_METEO
+    {
+        bool saveConfig = false;
+        if (config.lora.ignore_mqtt || !config.lora.config_ok_to_mqtt) {
+            config.lora.ignore_mqtt = false;
+            config.lora.config_ok_to_mqtt = true;
+            saveConfig = true;
+        }
+        // localPosition n'est restauré qu'après loadFromDisk : se fier à fixed_position.
+        // Ne pas forcer DISABLED ici (ça casserait une relocalisation gps_mode=ENABLED).
+        if (!config.position.fixed_position)
+            config.position.gps_mode = meshtastic_Config_PositionConfig_GpsMode_ENABLED;
+        if (saveConfig)
+            saveToDisk(SEGMENT_CONFIG);
+    }
+#endif
 
     if (channels.ensureLicensedOperation()) {
         LOG_WARN("Licensed operation removed persisted channel encryption/admin access");
